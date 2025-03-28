@@ -110,6 +110,16 @@
     .modal-buttons button {
       margin-left: 8px;
     }
+    input[type="range"] {
+	    width: 100%;
+    }
+    #iterationWarning {
+	    opacity: 0;
+	    transition: opacity 0.3s ease;
+    }
+    #iterationWarning.visible {
+	    opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -119,6 +129,12 @@
     <input name="file" type="file" id="fileInput">
     <label for="image"><small>(Optional custom image)</small></label>
     <input name="image" type="file" id="coverImageInput" accept="image/*">
+
+    <label for="iterationSlider"><small>Encryption Strength: <span id="iterationLabel">Weak</span> iterations</small></label>
+    <input type="range" id="iterationSlider" style="margin-top:10px;" min="200000" max="4294967295" value="200000" step="200000">
+    <div id="iterationWarning" style="color: #cc0000; font-size: small;">
+	    ⚠️ Higher values significantly increase encryption security but can make encryption/decryption much slower.  
+    </div>
     <button onclick="encryptFile()">🔐 Encrypt</button>
     <button onclick="decryptImage()">🔓 Decrypt</button>
     <canvas id="canvas" class="hidden"></canvas>
@@ -203,7 +219,7 @@ async function deriveAESKey(password, salt) {
     ["deriveKey"]
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-512" },
+    { name: "PBKDF2", salt, iterations: parseInt(iterationSlider.value), hash: "SHA-512" },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
@@ -502,6 +518,36 @@ async function decryptImage() {
   };
   img.src = URL.createObjectURL(file);
 }
+
+const iterationSlider = document.getElementById('iterationSlider');
+const iterationLabel = document.getElementById('iterationLabel');
+
+function formatIterations(iterations) {
+  if (iterations >= 1e9) return `${(iterations / 1e9).toFixed(2)} billion`;
+  if (iterations >= 1e6) return `${(iterations / 1e6).toFixed(2)} million`;
+  return iterations.toLocaleString();
+}
+
+function updateLabel(value) {
+  if (value < 1e6) iterationLabel.textContent = "Weak";
+  else if (value < 1e9) iterationLabel.textContent = "Moderate";
+  else iterationLabel.textContent = "Strong";
+
+  iterationLabel.textContent += ` (${formatIterations(value)})`;
+
+  if (value <= 200000) {
+    iterationWarning.classList.remove('visible');
+  } else {
+    iterationWarning.classList.add('visible');
+  }
+
+}
+
+iterationSlider.addEventListener('input', (e) => updateLabel(+e.target.value));
+
+// Initialize label on load
+updateLabel(iterationSlider.value);
+
 </script>
 </body>
 </html>
