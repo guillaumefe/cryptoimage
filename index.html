@@ -280,7 +280,8 @@ function getPasswordFromModal(titleText) {
   });
 }
 
-async function deriveAESKey(password, salt) {
+async function deriveAESKey(password, salt, iterations = parseInt(iterationSlider.value)) {
+
   const enc = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
     "raw",
@@ -407,8 +408,10 @@ async function encryptFile() {
       salt: bufToBase64(salt),
       ivPriv: bufToBase64(ivPriv),
       encryptedAESKey: bufToBase64(encryptedAESKey),
-      ivFile: bufToBase64(ivFile)
+      ivFile: bufToBase64(ivFile),
+      pbkdf2Iterations: parseInt(iterationSlider.value)
     });
+
     const metaBuf = new TextEncoder().encode(meta);
 
     // 6) Combine meta + encrypted data
@@ -579,7 +582,7 @@ async function decryptImage() {
       const salt = base64ToBuf(meta.salt);
       const ivPriv = base64ToBuf(meta.ivPriv);
       const encryptedPriv = base64ToBuf(meta.encryptedPrivKey);
-      const decryptedKey = await deriveAESKey(password, salt);
+      const decryptedKey = await deriveAESKey(password, salt, parseInt(meta.pbkdf2Iterations || 200000));
       const privKeyBuf = await crypto.subtle.decrypt(
         { name: "AES-GCM", iv: ivPriv },
         decryptedKey,
