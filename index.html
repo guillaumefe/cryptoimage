@@ -282,20 +282,56 @@ function getPasswordFromModal(titleText) {
 
 async function deriveAESKey(password, salt) {
   const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
+  const passwordKey = await crypto.subtle.importKey(
     "raw",
     enc.encode(password),
-    "PBKDF2",
+    { name: "HMAC", hash: "SHA-512" },
     false,
-    ["deriveKey"]
+    ["sign"]
   );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: parseInt(iterationSlider.value), hash: "SHA-512" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
+
+  const iterations = parseInt(iterationSlider.value);
+  const chunkSize = 10000; // Inject entropy every 10k iterations
+  const blocks = 1; // Only need 256 bits (32 bytes) for AES-GCM
+  const dkLen = 32;
+  const output = new Uint8Array(dkLen);
+  const blockIndex = new Uint8Array(4);
+  blockIndex[3] = 1; // block index = 1 (big-endian)
+
+  let u = new Uint8Array(await crypto.subtle.sign("HMAC", passwordKey, concatBuffer(salt, blockIndex)));
+  let t = new Uint8Array(u); // Initial T = U_1
+
+  for (let i = 2; i <= iterations; i++) {
+    u = new Uint8Array(await crypto.subtle.sign("HMAC", passwordKey, u));
+    for (let j = 0; j < t.length; j++) {
+      t[j] ^= u[j];
+    }
+
+    // Every chunkSize iterations, mix in entropy
+    if (i % chunkSize === 0 && entropyPool.length > 0) {
+      const entropySlice = entropyPool.slice(0, Math.min(32, entropyPool.length));
+      for (let j = 0; j < Math.min(t.length, entropySlice.length); j++) {
+        t[j] ^= entropySlice[j];
+      }
+    }
+  }
+
+  output.set(t.slice(0, dkLen));
+
+  return crypto.subtle.importKey(
+    "raw",
+    output,
+    { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"]
   );
+}
+
+function concatBuffer(buf1, buf2) {
+  const out = new Uint8Array(buf1.length + buf2.length);
+  out.set(buf1, 0);
+  out.set(buf2, buf1.length);
+  return out;
 }
 
 //--------------------------------
