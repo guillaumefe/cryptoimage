@@ -57,7 +57,7 @@ That’s it—there are no external dependencies or servers required. All encryp
    - The **AES key**, which is itself encrypted with the RSA public key  
    - All other **metadata** needed for decryption
 
-> **Tip**: You may want to rename the resulting PNG to avoid leaking the original file name in the `.png` filename.
+> **Tip**: You may want to rename the resulting PNG.
 
 ### 3.2 Decrypting a File
 
