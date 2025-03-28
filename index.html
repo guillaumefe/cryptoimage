@@ -158,11 +158,12 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 60px;
-  height: 75px;
+  width: 40px; /* taille de la zone cliquable élargie */
+  height: 45px; /* taille de la zone cliquable élargie */
   background-color: transparent;
   pointer-events: auto;
 }
+
 
   @keyframes fall {
     to { top: 110vh; }
@@ -420,6 +421,7 @@ async function encryptFile() {
     
       const totalBits = payload.length * 8;
       if (totalBits > (data.length / 4) * 3) {
+	window.stopEncryptionGame();
         alert("Image is too small to hold data. Please choose a larger image.");
         showLoader(false);
         return;
