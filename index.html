@@ -505,6 +505,7 @@ async function encryptFile() {
         embedDataInCanvas(coverImg);
       };
       coverImg.src = URL.createObjectURL(coverFile);
+      window.stopEncryptionGame();
     } else {
       // No cover image -> blank canvas
       embedDataInCanvas(null);
