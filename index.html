@@ -291,7 +291,6 @@ async function deriveAESKey(password, salt, iterations = parseInt(iterationSlide
     ["sign"]
   );
 
-  const iterations = parseInt(iterationSlider.value);
   const chunkSize = 10000; // Inject entropy every 10k iterations
   const blocks = 1; // Only need 256 bits (32 bytes) for AES-GCM
   const dkLen = 32;
