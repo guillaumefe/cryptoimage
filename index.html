@@ -194,7 +194,7 @@
     <input name="image" type="file" id="coverImageInput" accept="image/*">
 
     <label for="iterationSlider"><small>Encryption Strength: <span id="iterationLabel">Weak</span> iterations</small></label>
-    <input type="range" id="iterationSlider" style="margin-top:10px;" min="200000" max="4294967295" value="200000" step="200000">
+    <input type="range" id="iterationSlider" style="margin-top:10px;" min="200000" max="4294967295" value="200000">
     <div id="iterationWarning" style="color: #cc0000; font-size: small;">
 	    ⚠️ Higher values significantly increase encryption security but can make encryption/decryption much slower.  
     </div>
@@ -346,6 +346,9 @@ async function encryptFile() {
   if (!password) {
     return; // user cancelled or empty
   }
+
+  // Disable the slider so arrow keys do nothing during encryption
+  iterationSlider.disabled = true;
 
   window.startEncryptionGame();
 
@@ -635,9 +638,22 @@ const iterationSlider = document.getElementById('iterationSlider');
 const iterationLabel = document.getElementById('iterationLabel');
 
 function formatIterations(iterations) {
-  if (iterations >= 1e9) return `${(iterations / 1e9).toFixed(2)} billion`;
-  if (iterations >= 1e6) return `${(iterations / 1e6).toFixed(2)} million`;
-  return iterations.toLocaleString();
+  // Convert the raw number to a formatted string with thousand separators
+  const numericString = iterations.toLocaleString();
+
+  let textualScale = "";
+  if (iterations >= 1e9) {
+    // If 1 billion or more, append the "(X.XX billion)" suffix
+    const billions = (iterations / 1e9).toFixed(2);
+    textualScale = `-> ${billions} billion`;
+  } else if (iterations >= 1e6) {
+    // If 1 million or more (but less than 1 billion), append the "(X.XX million)" suffix
+    const millions = (iterations / 1e6).toFixed(2);
+    textualScale = `-> ${millions} million`;
+  }
+
+  // If there's a textual suffix, return "numeric (textual)", else just numeric
+  return textualScale ? `${numericString} ${textualScale}` : numericString;
 }
 
 function updateLabel(value) {
@@ -751,6 +767,74 @@ function stopGame() {
       crypto.getRandomValues(byteArray);
     }
     return byteArray;
+  }
+</script>
+
+<script>
+  // Variables to handle key-holding behavior
+  let isKeyHeldDown = false;
+  let holdInterval = null;
+  let holdStartTime = 0;
+  let holdStep = 1;
+
+  document.addEventListener('keydown', onArrowKeyDown);
+  document.addEventListener('keyup', onArrowKeyUp);
+
+  function onArrowKeyDown(e) {
+    // Only respond to left/right arrows
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+    // If the slider is disabled (e.g. encryption in progress), do nothing
+    if (iterationSlider.disabled) return;
+
+    // Prevent the browser’s default behavior (like scrolling)
+    e.preventDefault();
+
+    // If not already holding a key
+    if (!isKeyHeldDown) {
+      isKeyHeldDown = true;
+      holdStartTime = Date.now();
+      holdStep = 1;
+
+      // Repeat every 100 ms
+      holdInterval = setInterval(() => {
+        const duration = Date.now() - holdStartTime;
+
+        // Increase the step depending on how long the user holds the key
+        if (duration < 1000) {
+          holdStep = 1;
+	} else if (duration < 2000) {
+          holdStep = 10;
+	} else if (duration < 3000) {
+          holdStep = 1000;
+        } else if (duration < 4000) {
+          holdStep = 100000;
+        } else {
+          holdStep = 100000000;
+        }
+
+        const minValue = parseInt(iterationSlider.min, 10);
+        const maxValue = parseInt(iterationSlider.max, 10);
+        let currentValue = parseInt(iterationSlider.value, 10);
+
+        if (e.key === 'ArrowRight') {
+          iterationSlider.value = Math.min(maxValue, currentValue + holdStep);
+        } else {
+          iterationSlider.value = Math.max(minValue, currentValue - holdStep);
+        }
+
+        // Trigger the "input" event so updateLabel(...) is called
+        iterationSlider.dispatchEvent(new Event('input'));
+      }, 100);
+    }
+  }
+
+  function onArrowKeyUp(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      isKeyHeldDown = false;
+      clearInterval(holdInterval);
+      holdInterval = null;
+    }
   }
 </script>
 
