@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CryptoImage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(
+        circle at center,
+        #660000 0%,   /* Rouge sombre au centre */
+        #1F1F1F 50%,  /* Transition rapide vers le gris foncé */
+        #3F3F3F 100%  /* Se fond progressivement dans le gris plus clair */
+      );
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 10px;
+      color: #333;
+    }
+    h2 {
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+    .container {
+      background: rgba(255, 255, 255, 0.9);
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      max-width: 500px;
+      width: 100%;
+      text-align: center;
+    }
+    input[type="file"] {
+      margin: 10px 0;
+      padding: 10px;
+      width: calc(100% - 24px);
+      border-radius: 8px;
+      border: 1px solid #ddd;
+    }
+    button {
+      margin: 10px 5px;
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      background-color: #6C63FF;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #574bdb;
+    }
+    .loader {
+      border: 6px solid #f3f3f3;
+      border-top: 6px solid #6C63FF;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1.5s linear infinite;
+      margin: 20px auto;
+    }
+    .hidden { display: none; }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>CryptoImage</h2>
+    <label for="file"><small>File to encrypt</small></label>
+    <input name="file" type="file" id="fileInput">
+    <label for="image"><small>(Optional custom image)</small></label>
+    <input name="image" type="file" id="coverImageInput" accept="image/*">
+    <button onclick="encryptFile()">🔐 Encrypt</button>
+    <button onclick="decryptImage()">🔓 Decrypt</button>
+    <canvas id="canvas" class="hidden"></canvas>
+    <div id="loader" class="loader hidden"></div>
+  </div>
+
+<script>
+//--------------------------------
+//  Common Helpers
+//--------------------------------
+function bufToBase64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+}
+function base64ToBuf(b64) {
+  return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+}
+function showLoader(show) {
+  document.getElementById("loader").classList.toggle("hidden", !show);
+}
+async function deriveAESKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-512" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+//--------------------------------
+//  Encrypt Function
+//--------------------------------
+async function encryptFile() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file) return alert("Please select a file to encrypt.");
+  const password = prompt("Password to encrypt the RSA private key:");
+  if (!password) return;
+
+  showLoader(true);
+  try {
+    // 1) Generate and export RSA key pair (encrypted private + public)
+    const rsaKeyPair = await crypto.subtle.generateKey(
+      { name: "RSA-OAEP", modulusLength: 4096, publicExponent: new Uint8Array([1,0,1]), hash: "SHA-512" },
+      true,
+      ["encrypt","decrypt"]
+    );
+    const exportedPriv = await crypto.subtle.exportKey("pkcs8", rsaKeyPair.privateKey);
+
+    // 2) Encrypt the RSA private key with an AES-GCM key derived from the password
+    const salt = crypto.getRandomValues(new Uint8Array(32));
+    const ivPriv = crypto.getRandomValues(new Uint8Array(12));
+    const aesKeyForPriv = await deriveAESKey(password, salt);
+    const encryptedPrivKey = await crypto.subtle.encrypt(
+      { name:"AES-GCM", iv: ivPriv },
+      aesKeyForPriv,
+      exportedPriv
+    );
+
+    // 3) Encrypt the file + file name with a random AES key
+    const fileBuf = await file.arrayBuffer();
+    const aesFileKey = crypto.getRandomValues(new Uint8Array(32));
+
+    // 3a) Encrypt the file data
+    const ivFile = crypto.getRandomValues(new Uint8Array(12));
+    const aesKey = await crypto.subtle.importKey("raw", aesFileKey, "AES-GCM", false, ["encrypt"]);
+    const encryptedFile = await crypto.subtle.encrypt(
+      { name:"AES-GCM", iv: ivFile },
+      aesKey,
+      fileBuf
+    );
+
+    // 3b) Encrypt the file name
+    const fileNameBuf = new TextEncoder().encode(file.name);
+    const ivName = crypto.getRandomValues(new Uint8Array(12));
+    const encryptedFileName = await crypto.subtle.encrypt(
+      { name:"AES-GCM", iv: ivName },
+      aesKey,
+      fileNameBuf
+    );
+
+    // 4) Encrypt the AES file key using the RSA public key
+    const encryptedAESKey = await crypto.subtle.encrypt(
+      { name:"RSA-OAEP" },
+      rsaKeyPair.publicKey,
+      aesFileKey
+    );
+
+    // 5) Build metadata + concatenate
+    const meta = JSON.stringify({
+      dataLength: encryptedFile.byteLength,
+      encryptedFileName: bufToBase64(encryptedFileName),
+      ivName: bufToBase64(ivName),
+      encryptedPrivKey: bufToBase64(encryptedPrivKey),
+      salt: bufToBase64(salt),
+      ivPriv: bufToBase64(ivPriv),
+      encryptedAESKey: bufToBase64(encryptedAESKey),
+      ivFile: bufToBase64(ivFile)
+    });
+    const metaBuf = new TextEncoder().encode(meta);
+
+    // 6) Combine meta + encrypted data
+    const fullData = new Uint8Array(metaBuf.length + 1 + encryptedFile.byteLength);
+    fullData.set(metaBuf);
+    fullData[metaBuf.length] = 0x0A; // Separator (LF)
+    fullData.set(new Uint8Array(encryptedFile), metaBuf.length + 1);
+
+    //------------------------------------
+    // 7) Draw an image into the canvas
+    //    If coverImageInput is defined,
+    //    use it as the base image.
+    //------------------------------------
+    const coverFile = document.getElementById("coverImageInput").files[0];
+
+    const embedDataInCanvas = (baseImg) => {
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      // We need enough pixels to store fullData
+      // 1 pixel can store 3 bytes (R, G, B)
+      const neededPixels = Math.ceil(fullData.length / 3);
+
+      let width, height;
+      if (baseImg) {
+        width = baseImg.width;
+        height = baseImg.height;
+      } else {
+        // Otherwise, create a minimal square canvas
+        const size = Math.max(128, Math.ceil(Math.sqrt(neededPixels)));
+        width = size;
+        height = size;
+      }
+
+      // Check if the cover image has enough pixels
+      if (width * height < neededPixels) {
+        alert("The cover image is too small to hold all the data!");
+        showLoader(false);
+        return;
+      }
+
+      // Set canvas dimensions
+      canvas.width = width;
+      canvas.height = height;
+
+      // Draw the base image first, if any
+      if (baseImg) {
+        ctx.drawImage(baseImg, 0, 0, width, height);
+      } else {
+        // Otherwise, fill canvas with white
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, width, height);
+      }
+
+      // Get the image buffer
+      let imageData = ctx.getImageData(0, 0, width, height);
+      let data = imageData.data; // RGBA array
+
+      // Embed fullData in R, G, B (leave A = 255)
+      for (let i = 0; i < fullData.length; i++) {
+        const pixelIndex = Math.floor(i / 3);
+        const channelOffset = i % 3;  // 0=R, 1=G, 2=B
+        data[pixelIndex * 4 + channelOffset] = fullData[i];
+      }
+      // Ensure alpha is 255 everywhere
+      for (let px = 0; px < (width*height); px++) {
+        data[px * 4 + 3] = 255;
+      }
+      imageData.data = data;
+      ctx.putImageData(imageData, 0, 0);
+
+      // 8) Export as Blob -> Download
+      canvas.toBlob((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name + ".png"; // The output image
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showLoader(false);
+        // Reset file inputs
+        document.getElementById("fileInput").value = "";
+        document.getElementById("coverImageInput").value = "";
+      });
+    };
+
+    // If there's a cover image, load it first
+    if (coverFile) {
+      if (!coverFile.type.startsWith("image")) {
+        alert("The selected cover file is not an image!");
+        showLoader(false);
+        return;
+      }
+      const coverImg = new Image();
+      coverImg.onload = () => {
+        embedDataInCanvas(coverImg);
+      };
+      coverImg.src = URL.createObjectURL(coverFile);
+    } else {
+      // No cover image -> blank canvas
+      embedDataInCanvas(null);
+    }
+
+  } catch (e) {
+    showLoader(false);
+    alert("Encryption error: " + e.message);
+  }
+}
+
+//--------------------------------
+//  Decrypt Function
+//--------------------------------
+async function decryptImage() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file || !file.type.startsWith("image")) {
+    return alert("Please select a PNG image that contains an encrypted file.");
+  }
+  const password = prompt("Password to decrypt:");
+  if (!password) return;
+  showLoader(true);
+
+  const img = new Image();
+  img.onload = async () => {
+    try {
+      const canvas = document.getElementById("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      // Extract (R, G, B) from each pixel, ignoring A
+      const extracted = [];
+      for (let i = 0; i < imageData.length; i += 4) {
+        extracted.push(imageData[i], imageData[i + 1], imageData[i + 2]);
+      }
+      const rawData = new Uint8Array(extracted);
+
+      const separator = rawData.indexOf(0x0A);
+      if (separator === -1) throw new Error("Invalid data: missing separator.");
+
+      const metaBuf = rawData.slice(0, separator);
+      const meta = JSON.parse(new TextDecoder().decode(metaBuf));
+      const encrypted = rawData.slice(separator + 1, separator + 1 + meta.dataLength);
+
+      // Decrypt the RSA private key
+      const salt = base64ToBuf(meta.salt);
+      const ivPriv = base64ToBuf(meta.ivPriv);
+      const encryptedPriv = base64ToBuf(meta.encryptedPrivKey);
+      const decryptedKey = await deriveAESKey(password, salt);
+      const privKeyBuf = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: ivPriv },
+        decryptedKey,
+        encryptedPriv
+      );
+      const privateKey = await crypto.subtle.importKey(
+        "pkcs8",
+        privKeyBuf,
+        { name: "RSA-OAEP", hash: "SHA-512" },
+        false,
+        ["decrypt"]
+      );
+
+      // Decrypt the AES key via the RSA private key
+      const aesKeyBuf = await crypto.subtle.decrypt(
+        { name: "RSA-OAEP" },
+        privateKey,
+        base64ToBuf(meta.encryptedAESKey)
+      );
+      const aesKey = await crypto.subtle.importKey("raw", aesKeyBuf, "AES-GCM", false, ["decrypt"]);
+
+      // Decrypt the file data
+      const decryptedFile = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBuf(meta.ivFile) },
+        aesKey,
+        encrypted
+      );
+
+      // Decrypt the file name
+      const decryptedFileNameBuf = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBuf(meta.ivName) },
+        aesKey,
+        base64ToBuf(meta.encryptedFileName)
+      );
+      const realFileName = new TextDecoder().decode(decryptedFileNameBuf);
+
+      // Download the decrypted file with its original name
+      const blob = new Blob([decryptedFile]);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = realFileName || "decrypted_file";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      alert("Error decrypting the image: " + e.message);
+    } finally {
+      showLoader(false);
+    }
+  };
+  img.src = URL.createObjectURL(file);
+}
+</script>
+</body>
+</html>
