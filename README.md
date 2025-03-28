@@ -13,8 +13,12 @@
 3. [Usage](#usage)  
    1. [Encrypting a File](#encrypting-a-file)  
    2. [Decrypting a File](#decrypting-a-file)  
-4. [Security Warnings](#security-warnings)  
-5. [License (GPLv3)](#license-gplv3)
+4. [Security Warnings](#security-warnings)
+5. [Entropy Game: Enhancing Encryption Security](#entropy-game-enhancing-encryption-security)
+   1. [What is the Entropy Game?](#51-what-is-the-entropy-game)
+   2. [How It Works](#52-how-it-works)
+   3. [Security Benefits](#53-security-benefits)
+6. [License (GPLv3)](#license-gplv3)
 
 ---
 
@@ -83,7 +87,37 @@ That’s it—there are no external dependencies or servers required. All encryp
 
 ---
 
-## 5. License (GPLv3)
+## 5. Entropy Game: Enhancing Encryption Security
+CryptoImage incorporates an interactive feature called the Entropy Game, designed to enhance the security of cryptographic key generation by increasing entropy during the encryption process.
+
+### 5.1 What is the Entropy Game?
+The Entropy Game is a simple, interactive mini-game that activates automatically when encryption begins. Users are presented with falling water droplets on the screen and are instructed to click them. Every click—successful or not—generates additional randomness (entropy), which is directly fed into the cryptographic functions.
+
+### 5.2 How It Works
+Activation:
+As soon as you enter your encryption password and confirm, the Entropy Game starts immediately.
+
+**Gameplay:**
+
+- Water droplets fall randomly across the browser window.
+- Users are encouraged to click on these droplets. Each successful click increments an entropy score visibly displayed on the page.
+- Even clicks slightly outside the droplets count as successful to facilitate ease of use and avoid frustration.
+- All clicks (whether they hit a droplet or not) are captured and used to enrich the entropy pool, enhancing randomness.
+
+**Pause/Resume:**
+A pause button appears during encryption, allowing users to temporarily halt the game without interrupting the encryption process itself. The encryption will continue, but entropy collection pauses until the game resumes.
+
+**Completion:**
+The game and all related UI elements automatically disappear when encryption is completed.
+
+### 5.3 Security Benefits
+The primary security advantage of the Entropy Game lies in improved randomness during the generation of cryptographic keys (RSA and AES). User-generated entropy provides an additional, dynamic source of randomness beyond the browser's built-in random number generator (crypto.getRandomValues()), significantly reducing predictability and enhancing resistance to potential cryptographic attacks.
+
+This interactive entropy collection process makes it substantially more difficult for attackers to predict or brute-force cryptographic keys, offering greater overall protection for encrypted data.
+
+---
+
+## 6. License (GPLv3)
 
 CryptoImage is licensed under the **GNU General Public License v3.0**.  
 You can find the full text of the license [here](https://www.gnu.org/licenses/gpl-3.0.html).
