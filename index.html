@@ -9,9 +9,9 @@
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background: radial-gradient(
         circle at center,
-        #660000 0%,   /* Rouge sombre au centre */
-        #1F1F1F 50%,  /* Transition rapide vers le gris foncé */
-        #3F3F3F 100%  /* Se fond progressivement dans le gris plus clair */
+        #660000 0%,
+        #1F1F1F 50%,
+        #3F3F3F 100%
       );
       display: flex;
       flex-direction: column;
@@ -70,6 +70,46 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* Modal styling */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none; /* hidden by default */
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    .modal-overlay.show {
+      display: flex;
+    }
+    .modal-content {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: left;
+      width: 300px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    }
+    .modal-content h3 {
+      margin-top: 0;
+    }
+    .modal-content input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+    .modal-buttons {
+      text-align: right;
+    }
+    .modal-buttons button {
+      margin-left: 8px;
+    }
   </style>
 </head>
 <body>
@@ -85,6 +125,18 @@
     <div id="loader" class="loader hidden"></div>
   </div>
 
+  <!-- Password Modal -->
+  <div id="passwordModal" class="modal-overlay">
+    <div class="modal-content">
+      <h3 id="modalTitle"></h3>
+      <input type="password" id="modalPassword" placeholder="Enter password...">
+      <div class="modal-buttons">
+        <button id="cancelBtn">Cancel</button>
+        <button id="okBtn">OK</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 //--------------------------------
 //  Common Helpers
@@ -98,6 +150,49 @@ function base64ToBuf(b64) {
 function showLoader(show) {
   document.getElementById("loader").classList.toggle("hidden", !show);
 }
+
+/**
+ * Opens a modal with a given title/message and returns a Promise
+ * that resolves with the entered password, or null if cancelled.
+ */
+function getPasswordFromModal(titleText) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('passwordModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalPassword = document.getElementById('modalPassword');
+    const okBtn = document.getElementById('okBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+
+    modalTitle.textContent = titleText;
+    modalPassword.value = ''; // Reset input
+    modal.classList.add('show');
+
+    // Cleanup function to hide modal and remove event listeners
+    function closeModal() {
+      modal.classList.remove('show');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+    }
+
+    function onOk() {
+      const pass = modalPassword.value.trim();
+      closeModal();
+      resolve(pass || null);
+    }
+
+    function onCancel() {
+      closeModal();
+      resolve(null);
+    }
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+
+    // Optionally focus the password field for quicker typing
+    modalPassword.focus();
+  });
+}
+
 async function deriveAESKey(password, salt) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
@@ -122,8 +217,12 @@ async function deriveAESKey(password, salt) {
 async function encryptFile() {
   const file = document.getElementById("fileInput").files[0];
   if (!file) return alert("Please select a file to encrypt.");
-  const password = prompt("Password to encrypt the RSA private key:");
-  if (!password) return;
+
+  // Instead of prompt(...), use our password modal:
+  const password = await getPasswordFromModal("Password to encrypt:");
+  if (!password) {
+    return; // user cancelled or empty
+  }
 
   showLoader(true);
   try {
@@ -302,8 +401,13 @@ async function decryptImage() {
   if (!file || !file.type.startsWith("image")) {
     return alert("Please select a PNG image that contains an encrypted file.");
   }
-  const password = prompt("Password to decrypt:");
-  if (!password) return;
+
+  // Instead of prompt(...), use our password modal:
+  const password = await getPasswordFromModal("Password to decrypt:");
+  if (!password) {
+    return; // user cancelled or empty
+  }
+
   showLoader(true);
 
   const img = new Image();
