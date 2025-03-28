@@ -121,6 +121,68 @@
 	    opacity: 1;
     }
   </style>
+
+<style>
+  #entropyMessage {
+    margin-top: 15px;
+    font-size: 14px;
+    color: #444;
+    display: none;
+  }
+
+  #gameControls button {
+    margin-top: 10px;
+    background-color: #008080;
+  }
+
+  #gameControls {
+    display: none;
+  }
+
+.drop {
+  position: fixed;
+  top: -20px;
+  width: 18px;
+  height: 20px;
+  background-color: #00bfff;
+  border-radius: 50%;
+  opacity: 0.7;
+  pointer-events: auto;
+  animation: fall linear;
+  transform: translate(-50%, 0);
+}
+
+.drop::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px; /* taille de la zone cliquable élargie */
+  height: 45px; /* taille de la zone cliquable élargie */
+  background-color: transparent;
+  pointer-events: auto;
+}
+
+  @keyframes fall {
+    to { top: 110vh; }
+  }
+
+  #entropyScore {
+    font-weight: bold;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .no-clicks {
+    pointer-events: none;
+  }
+
+  .drop {
+    pointer-events: auto;
+  }
+</style>
+
 </head>
 <body>
   <div class="container">
@@ -140,6 +202,14 @@
     <canvas id="canvas" class="hidden"></canvas>
     <div id="loader" class="loader hidden"></div>
   </div>
+
+<div id="entropyMessage">
+  Click on the falling water droplets to increase entropy and strengthen your encryption keys!
+</div>
+<div id="gameControls">
+  <button id="toggleGame" style="pointer-events:auto;position:relative;z-index:9999;">Pause</button>
+</div>
+<div id="entropyScore">Entropy Score: 0</div>
 
   <!-- Password Modal -->
   <div id="passwordModal" class="modal-overlay">
@@ -240,6 +310,8 @@ async function encryptFile() {
     return; // user cancelled or empty
   }
 
+  window.startEncryptionGame();
+
   showLoader(true);
   try {
     // 1) Generate and export RSA key pair (encrypted private + public)
@@ -251,8 +323,8 @@ async function encryptFile() {
     const exportedPriv = await crypto.subtle.exportKey("pkcs8", rsaKeyPair.privateKey);
 
     // 2) Encrypt the RSA private key with an AES-GCM key derived from the password
-    const salt = crypto.getRandomValues(new Uint8Array(32));
-    const ivPriv = crypto.getRandomValues(new Uint8Array(12));
+    const salt = window.getSecureRandomValues(new Uint8Array(32));
+    const ivPriv = window.getSecureRandomValues(new Uint8Array(12));
     const aesKeyForPriv = await deriveAESKey(password, salt);
     const encryptedPrivKey = await crypto.subtle.encrypt(
       { name:"AES-GCM", iv: ivPriv },
@@ -262,10 +334,10 @@ async function encryptFile() {
 
     // 3) Encrypt the file + file name with a random AES key
     const fileBuf = await file.arrayBuffer();
-    const aesFileKey = crypto.getRandomValues(new Uint8Array(32));
+    const aesFileKey = window.getSecureRandomValues(new Uint8Array(32));
 
     // 3a) Encrypt the file data
-    const ivFile = crypto.getRandomValues(new Uint8Array(12));
+    const ivFile = window.getSecureRandomValues(new Uint8Array(12));
     const aesKey = await crypto.subtle.importKey("raw", aesFileKey, "AES-GCM", false, ["encrypt"]);
     const encryptedFile = await crypto.subtle.encrypt(
       { name:"AES-GCM", iv: ivFile },
@@ -275,7 +347,7 @@ async function encryptFile() {
 
     // 3b) Encrypt the file name
     const fileNameBuf = new TextEncoder().encode(file.name);
-    const ivName = crypto.getRandomValues(new Uint8Array(12));
+    const ivName = window.getSecureRandomValues(new Uint8Array(12));
     const encryptedFileName = await crypto.subtle.encrypt(
       { name:"AES-GCM", iv: ivName },
       aesKey,
@@ -549,5 +621,98 @@ iterationSlider.addEventListener('input', (e) => updateLabel(+e.target.value));
 updateLabel(iterationSlider.value);
 
 </script>
+
+<script>
+  let entropyScore = 0;
+  let entropyPool = new Uint8Array();
+  let gameActive = false;
+  let gameInterval;
+
+  document.getElementById('toggleGame').onclick = function() {
+    gameActive = !gameActive;
+    this.textContent = gameActive ? 'Pause' : 'Start';
+    if (gameActive) {
+      startGame();
+    } else {
+      stopGame();
+    }
+  };
+
+  function createDrop() {
+    const drop = document.createElement('div');
+    drop.classList.add('drop');
+    drop.style.left = Math.random() * 100 + 'vw';
+    drop.style.animationDuration = (3 + Math.random() * 2) + 's';
+
+    drop.onclick = function(e) {
+      entropyScore++;
+      document.getElementById('entropyScore').textContent = 'Entropy Score: ' + entropyScore;
+      accumulateEntropy(e.clientX, e.clientY);
+      drop.remove();
+      e.stopPropagation();
+    };
+
+    drop.onanimationend = () => drop.remove();
+
+    document.body.appendChild(drop);
+  }
+
+  function accumulateEntropy(x, y) {
+    const timeByte = Date.now() % 256;
+    const entropyData = new Uint8Array([x % 256, y % 256, timeByte]);
+    const combinedEntropy = new Uint8Array(entropyPool.length + entropyData.length);
+    combinedEntropy.set(entropyPool);
+    combinedEntropy.set(entropyData, entropyPool.length);
+    entropyPool = combinedEntropy;
+  }
+
+  function handleGlobalClick(e) {
+    accumulateEntropy(e.clientX, e.clientY);
+  }
+
+  function startGame() {
+    document.getElementById('entropyMessage').style.display = 'block';
+    document.getElementById('gameControls').style.display = 'block';
+    document.getElementById('entropyScore').style.display = 'block';
+    document.body.classList.add('no-clicks');
+    document.body.addEventListener('click', handleGlobalClick, true);
+    gameInterval = setInterval(createDrop, 500);
+  }
+
+function stopGame() {
+  clearInterval(gameInterval);
+  document.getElementById('entropyMessage').style.display = 'block';
+  document.getElementById('gameControls').style.display = 'block';
+  document.getElementById('entropyScore').style.display = 'block';
+  document.body.classList.remove('no-clicks');
+  document.body.removeEventListener('click', handleGlobalClick, true);
+}
+
+
+  window.startEncryptionGame = function() {
+    entropyScore = 0;
+    entropyPool = new Uint8Array();
+    gameActive = true;
+    document.getElementById('toggleGame').textContent = 'Pause';
+    startGame();
+  }
+
+  window.stopEncryptionGame = function() {
+    gameActive = false;
+    document.getElementById('toggleGame').textContent = 'Start';
+    stopGame();
+  }
+
+  window.getSecureRandomValues = function(byteArray) {
+    if (entropyPool.length >= byteArray.length) {
+      byteArray.set(entropyPool.slice(0, byteArray.length));
+      entropyPool = entropyPool.slice(byteArray.length);
+    } else {
+      crypto.getRandomValues(byteArray);
+    }
+    return byteArray;
+  }
+</script>
+
 </body>
 </html>
