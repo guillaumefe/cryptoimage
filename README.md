@@ -94,7 +94,7 @@ CryptoImage incorporates an interactive feature called the Entropy Game, designe
 The Entropy Game is a simple, interactive mini-game that activates automatically when encryption begins. Users are presented with falling water droplets on the screen and are instructed to click them. Every click—successful or not—generates additional randomness (entropy), which is directly fed into the cryptographic functions.
 
 ### 5.2 How It Works
-Activation:
+**Activation:**
 As soon as you enter your encryption password and confirm, the Entropy Game starts immediately.
 
 **Gameplay:**
